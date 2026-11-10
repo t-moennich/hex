@@ -1204,11 +1204,10 @@ pub enum HotkeySlot {
 
 impl AppSettings {
     /// Whether `binding` overlaps a shortcut `slot` must not share: the other
-    /// active shortcuts and, where meetings exist (macOS), meeting paste. The
-    /// two capture shortcuts never share a key, on or off, since turning
-    /// captures on can't pull them apart; Labs › Screenshots' record
-    /// shortcut holds its key while its Lab is on, even with Annotate off,
-    /// so Annotate can't take it when it's turned on.
+    /// active shortcuts and, where meetings exist (macOS), meeting paste. A
+    /// saved Screenshots record shortcut and Annotate's capture shortcuts
+    /// never share a key, whether Annotate or the Lab is on, since turning
+    /// either on can't pull them apart.
     pub fn hotkey_in_use(&self, slot: HotkeySlot, binding: &HotkeyBinding) -> bool {
         let mut others = Vec::new();
         if slot != HotkeySlot::Dictation {
@@ -1267,9 +1266,13 @@ impl AppSettings {
         if slot != HotkeySlot::Screenshot && cfg!(target_os = "macos") && self.labs.screenshots {
             others.push(self.screenshots.hotkey.clone());
         }
+        // A saved record shortcut and Annotate's own capture shortcuts never
+        // share a key, even with one of them off, so turning either on can
+        // never leave one of the two dead.
+        others.extend(self.screenshots_record_counterparts(slot));
         if slot != HotkeySlot::ScreenshotRecord
-            && cfg!(target_os = "macos")
-            && self.labs.screenshots
+            && !slot.is_annotate_capture()
+            && self.screenshot_recording_available()
             && let Some(record) = &self.screenshots.record_hotkey
         {
             others.push(record.clone());
@@ -1728,19 +1731,32 @@ mod tests {
         assert_eq!(settings.runtime_hotkeys().second_dictation, None);
     }
 
-    /// A record shortcut saved while Annotate is off keeps its key once the
-    /// Screenshots Lab is on, so Annotate can never be given the same chord
-    /// and take it: the record shortcut would otherwise go dead, and
-    /// Annotate would record the whole screen.
+    /// A saved Screenshots record shortcut and Annotate's own capture
+    /// shortcuts never share a key, whether Annotate or the Lab is on:
+    /// turning either on can't leave the record shortcut dead and let
+    /// Annotate record the whole screen. Other shortcuts see the record key
+    /// only while a recording is available.
     #[test]
-    fn the_record_shortcut_holds_its_key_while_the_screenshot_lab_is_on() {
+    fn the_record_shortcut_and_annotates_capture_shortcuts_never_share_a_key() {
+        let key = |label: &str| HotkeyKey {
+            code: u16::from(label.as_bytes()[0]),
+            label: label.to_uppercase(),
+        };
         let record = HotkeyBinding {
             modifiers: HotkeyModifiers {
                 command: Some(ModifierSide::Either),
                 shift: Some(ModifierSide::Either),
                 ..HotkeyModifiers::default()
             },
-            key: Some(HotkeyKey::named("r")),
+            key: Some(key("r")),
+        };
+        let replay = HotkeyBinding {
+            modifiers: HotkeyModifiers {
+                command: Some(ModifierSide::Either),
+                shift: Some(ModifierSide::Either),
+                ..HotkeyModifiers::default()
+            },
+            key: Some(key("e")),
         };
         let mut settings = AppSettings {
             capture: CaptureSettings {
@@ -1749,40 +1765,33 @@ mod tests {
             },
             ..AppSettings::default()
         };
-        settings.labs.screenshots = true;
+        settings.capture.replay_hotkey = Some(replay.clone());
         settings.screenshots.record_hotkey = Some(record.clone());
         if cfg!(target_os = "macos") {
-            assert!(
-                settings.hotkey_in_use(HotkeySlot::Capture, &record),
-                "Annotate's check counts the record shortcut before Annotate is on"
-            );
-            assert!(
-                settings.hotkey_in_use(HotkeySlot::Screenshot, &record),
-                "the screenshot shortcut's check counts it too"
-            );
-            assert!(
-                !settings.screenshots_shortcuts_in_use(),
-                "nothing else uses the Lab's own shortcuts"
-            );
-            assert_eq!(
-                settings.active_screenshot_record_hotkey(),
-                None,
-                "a recording still needs Annotate"
-            );
-
-            // Turning the Lab off frees its keys again.
+            // Annotate's checks count the saved record shortcut with
+            // Annotate and the Lab off, so neither can take it when it's
+            // turned on.
+            assert!(settings.hotkey_in_use(HotkeySlot::Capture, &record));
+            assert!(settings.hotkey_in_use(HotkeySlot::CaptureReplay, &record));
+            // The record check counts Annotate's saved shortcuts the same
+            // way.
+            assert!(settings.hotkey_in_use(HotkeySlot::ScreenshotRecord, &settings.capture.hotkey));
+            assert!(settings.hotkey_in_use(HotkeySlot::ScreenshotRecord, &replay));
+            // Another shortcut only sees the record key while a recording
+            // is available: the Lab and Annotate on.
+            assert!(!settings.hotkey_in_use(HotkeySlot::RawDictation, &record));
+            settings.labs.screenshots = true;
+            assert!(!settings.hotkey_in_use(HotkeySlot::RawDictation, &record));
+            settings.capture.enabled = true;
+            assert!(settings.hotkey_in_use(HotkeySlot::RawDictation, &record));
+            // Annotate's check still counts the record key with the Lab off.
             settings.labs.screenshots = false;
-            assert!(!settings.hotkey_in_use(HotkeySlot::Capture, &record));
-            // Its own two shortcuts on one key, or one another shortcut
-            // uses, keeps the Lab off.
-            settings.screenshots.hotkey = record.clone();
-            assert!(settings.screenshots_shortcuts_in_use());
-            settings.screenshots.hotkey = HotkeyBinding::screenshot_default();
-            settings.dictation_hotkey = HotkeyBinding::screenshot_default();
-            assert!(settings.screenshots_shortcuts_in_use());
+            assert!(settings.hotkey_in_use(HotkeySlot::Capture, &record));
         } else {
             assert!(!settings.hotkey_in_use(HotkeySlot::Capture, &record));
-            assert!(!settings.screenshots_shortcuts_in_use());
+            assert!(
+                !settings.hotkey_in_use(HotkeySlot::ScreenshotRecord, &settings.capture.hotkey)
+            );
         }
     }
 

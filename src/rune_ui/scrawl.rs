@@ -539,8 +539,15 @@ mod tests {
         );
         assert_eq!(serde_json::to_value(&settings).unwrap(), before);
 
-        // With the Lab off, the chord is Annotate's alone.
+        // With the Lab off, the saved record shortcut still holds the key:
+        // Annotate can't take it until the record shortcut is cleared.
         settings.labs.screenshots = false;
+        assert!(
+            set_enabled(&mut settings, true)
+                .unwrap_err()
+                .contains("already in use")
+        );
+        settings.screenshots.record_hotkey = None;
         set_enabled(&mut settings, true).unwrap();
         assert!(settings.capture.enabled);
     }

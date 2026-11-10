@@ -605,31 +605,13 @@ fn rows(ui: &Ui) -> Vec<Row> {
                 tr("On a screen with a notch, the recording indicator grows out of the notch instead of sitting below the menu bar"),
             ));
             // Hex's session tap takes the shortcut; ScreenCaptureKit shoots.
-            // A saved shortcut another Hex shortcut already uses keeps the
-            // Lab off, rather than leaving one of them dead once it's on.
             #[cfg(hex_capture)]
-            {
-                let screenshots = row(
-                    Feature::Screenshots,
-                    Some(&CAMERA),
-                    tr("Screenshots"),
-                    tr(
-                        "Press ⌘⇧4 to capture an area, or press Space for a window. The shot goes on the clipboard and into a folder",
-                    ),
-                );
-                let held = !screenshots.on
-                    && !screenshots.locked
-                    && Feature::Screenshots.on_refusal(settings).is_some();
-                rows.push(if held {
-                    Row {
-                        locked: true,
-                        about: tr("Another Hex shortcut already uses one of its saved shortcuts. Change that shortcut first"),
-                        ..screenshots
-                    }
-                } else {
-                    screenshots
-                });
-            }
+            rows.push(row(
+                Feature::Screenshots,
+                Some(&CAMERA),
+                tr("Screenshots"),
+                tr("Press ⌘⇧4 to capture an area, or press Space for a window. The shot goes on the clipboard and into a folder"),
+            ));
             // macOS 27's SCClipBufferingOutput keeps a rolling 15 s display ring in replayd.
             #[cfg(hex_capture)]
             if Feature::AnnotateReplay.on_this_os() {
@@ -958,10 +940,6 @@ fn flip(ui: &mut Ui, lab: Lab) {
     let on = !feature.on(&ui.settings);
     // Parakeet Ultra stays on while it dictates; its card says why.
     if !on && feature.off_refusal(&ui.settings).is_some() {
-        return;
-    }
-    // Its saved shortcuts would go dead; the card says which to change.
-    if on && feature.on_refusal(&ui.settings).is_some() {
         return;
     }
     if !on {

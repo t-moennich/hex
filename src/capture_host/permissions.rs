@@ -54,10 +54,21 @@ pub enum AskedBy {
     Capture,
     /// Labs › Screenshots, which reopens to shoot, or to record when
     /// `record` is set.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Screenshots {
         record: bool,
     },
+}
+
+impl AskedBy {
+    /// What a capture refused for a permission asks: a Screenshots recording
+    /// (`clip`) returns to its picker; any other capture is Annotate's.
+    pub fn for_capture(clip: bool) -> Self {
+        if clip {
+            Self::Screenshots { record: true }
+        } else {
+            Self::Capture
+        }
+    }
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -173,9 +184,10 @@ pub fn on_missing(show: impl Fn(CaptureNeed, AskedBy) + Send + Sync + 'static) {
     let _ = HELPER.set(Box::new(show));
 }
 
-/// A capture was refused for `need`.
-pub fn report(need: CaptureNeed) {
-    report_asked(need, AskedBy::Capture);
+/// A capture was refused for `need`; `clip` is a Screenshots recording,
+/// which returns to its picker rather than Annotate's whole-screen capture.
+pub fn report_capture(need: CaptureNeed, clip: bool) {
+    report_asked(need, AskedBy::for_capture(clip));
 }
 
 /// A screenshot or recording was refused for `need`: the helper returns to
@@ -190,5 +202,21 @@ fn report_asked(need: CaptureNeed, asked_by: AskedBy) {
     crate::desktop::permission_guide::clear_legacy_entries_async(need.kind());
     if let Some(show) = HELPER.get() {
         show(need, asked_by);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A Screenshots recording returns to its picker once granted; any other
+    /// capture returns to Annotate's own whole-screen capture.
+    #[test]
+    fn a_clip_capture_asks_for_the_screenshots_picker() {
+        assert_eq!(
+            AskedBy::for_capture(true),
+            AskedBy::Screenshots { record: true }
+        );
+        assert_eq!(AskedBy::for_capture(false), AskedBy::Capture);
     }
 }

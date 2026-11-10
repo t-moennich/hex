@@ -244,16 +244,6 @@ impl Feature {
             )
     }
 
-    /// Why turning this feature on is refused now: Labs › Screenshots'
-    /// saved shortcuts hold their keys, so one already in use would go dead
-    /// once the Lab is on.
-    pub fn on_refusal(self, settings: &AppSettings) -> Option<&'static str> {
-        (self == Self::Screenshots && settings.screenshots_shortcuts_in_use()).then_some(
-            "A Screenshots shortcut is already in use; set screenshots.hotkey or \
-             screenshots.record_hotkey to another shortcut first",
-        )
-    }
-
     /// The feature `hex settings` key `key` switches (its toggle, or
     /// Unload when idle's minutes).
     pub fn for_settings_key(key: &str) -> Option<Self> {

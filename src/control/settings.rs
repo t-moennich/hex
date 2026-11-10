@@ -1248,12 +1248,14 @@ pub fn apply(
             ));
         }
         "labs.screenshots"
-            if candidate.labs.screenshots && candidate.screenshots_shortcuts_in_use() =>
+            if candidate.labs.screenshots
+                && candidate
+                    .hotkey_in_use(HotkeySlot::Screenshot, &candidate.screenshots.hotkey) =>
         {
             return Err(ControlError::new(
                 "shortcut-in-use",
-                "A Screenshots shortcut is already in use; set screenshots.hotkey or \
-                 screenshots.record_hotkey to another shortcut first",
+                "The screenshot shortcut is already in use; set screenshots.hotkey to another \
+                 shortcut first",
             ));
         }
         "labs.standalone_special_keys" => candidate.repair_special_keys(),
@@ -1480,27 +1482,69 @@ mod tests {
         }
     }
 
-    /// A record shortcut and Annotate's shortcut can't share a chord: the
-    /// Lab refuses to turn on with its saved shortcut already taken, and
-    /// Annotate refuses to turn on over it, whichever order they arrive in.
+    /// A saved record shortcut and Annotate's shortcut can't share a chord
+    /// with either off. The reported sequence: Annotate off with the Lab on
+    /// and a record shortcut saved. Setting Annotate's shortcut to the
+    /// record chord is refused, and so is setting the record shortcut to
+    /// Annotate's chord. The old code allowed both, and Annotate then won
+    /// the key at runtime, recording the whole screen.
     #[cfg(target_os = "macos")]
     #[test]
     fn the_screenshot_lab_and_annotate_never_share_a_shortcut() {
-        let mut annotate_off = AppSettings {
+        let chord = |code: u16, label: &str, modifiers: crate::app_settings::HotkeyModifiers| {
+            HotkeyBinding {
+                modifiers,
+                key: Some(HotkeyKey {
+                    code,
+                    label: label.into(),
+                }),
+            }
+        };
+        let mut settings = AppSettings {
             capture: crate::app_settings::CaptureSettings {
                 enabled: false,
                 ..Default::default()
             },
             ..AppSettings::default()
         };
-        annotate_off.labs.screenshots = true;
-        annotate_off.screenshots.record_hotkey = Some(annotate_off.capture.hotkey.clone());
-        let error = apply(&annotate_off, "capture.enabled", "true", &rules()).unwrap_err();
+        settings.labs.screenshots = true;
+        settings.capture.hotkey = chord(
+            u16::from(b's'),
+            "S",
+            crate::app_settings::HotkeyModifiers {
+                option: Some(ModifierSide::Either),
+                shift: Some(ModifierSide::Either),
+                ..Default::default()
+            },
+        );
+        let record = chord(
+            u16::from(b'r'),
+            "R",
+            crate::app_settings::HotkeyModifiers {
+                command: Some(ModifierSide::Either),
+                shift: Some(ModifierSide::Either),
+                ..Default::default()
+            },
+        );
+        settings.screenshots.record_hotkey = Some(record.clone());
+
+        let error = apply(
+            &settings,
+            "capture.hotkey",
+            &format_hotkey(&record),
+            &rules(),
+        )
+        .unwrap_err();
         assert_eq!(error.code, "shortcut-in-use");
 
-        let mut lab_off = AppSettings::default();
-        lab_off.screenshots.record_hotkey = Some(lab_off.capture.hotkey.clone());
-        let error = apply(&lab_off, "labs.screenshots", "true", &rules()).unwrap_err();
+        let annotate = settings.capture.hotkey.clone();
+        let error = apply(
+            &settings,
+            "screenshots.record_hotkey",
+            &format_hotkey(&annotate),
+            &rules(),
+        )
+        .unwrap_err();
         assert_eq!(error.code, "shortcut-in-use");
     }
 

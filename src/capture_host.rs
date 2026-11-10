@@ -2021,7 +2021,9 @@ impl CaptureHost {
         if !cfg!(test)
             && let Some((need, _)) = permissions::missing(target != CaptureTarget::Phone)
         {
-            permissions::report(need);
+            // A Screenshots recording (`clip`) goes back to its picker once
+            // the grant is made; any other capture records the screen.
+            permissions::report_capture(need, clip);
             return Ok(ControlReply::error(
                 "permission",
                 format!("{} is off for Hex", need.name()),

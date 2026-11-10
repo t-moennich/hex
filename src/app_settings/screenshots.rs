@@ -67,25 +67,6 @@ impl AppSettings {
             .filter(|binding| !self.hotkey_in_use(HotkeySlot::ScreenshotRecord, binding))
     }
 
-    /// Whether another active shortcut already uses one of the Lab's own
-    /// shortcuts, or the two share a key, judged as they stand once the Lab
-    /// is on. The Lab's saved record shortcut keeps its key whether or not
-    /// Annotate is on, so Annotate can't take that key when it's turned on;
-    /// turning the Lab on with a taken shortcut is refused rather than
-    /// leaving one of them dead.
-    pub fn screenshots_shortcuts_in_use(&self) -> bool {
-        if !cfg!(target_os = "macos") {
-            return false;
-        }
-        let screenshot = &self.screenshots.hotkey;
-        let record = self.screenshots.record_hotkey.as_ref();
-        // Each other: `hotkey_in_use` leaves the Lab's own shortcuts out
-        // while it's off, which is where this is asked.
-        record.is_some_and(|record| record.overlaps(screenshot))
-            || self.hotkey_in_use(HotkeySlot::Screenshot, screenshot)
-            || record.is_some_and(|record| self.hotkey_in_use(HotkeySlot::ScreenshotRecord, record))
-    }
-
     /// Whether Labs › Screenshots can record: macOS, the Lab on, and
     /// Annotate on, since a recording is an Annotate capture.
     pub fn screenshot_recording_available(&self) -> bool {
@@ -94,6 +75,46 @@ impl AppSettings {
         #[cfg(not(hex_capture))]
         let capture = false;
         cfg!(target_os = "macos") && self.labs.screenshots && capture
+    }
+
+    /// The saved shortcuts `slot` counts because the Screenshots record
+    /// shortcut and Annotate's capture shortcuts never share a key, whether
+    /// Annotate or the Lab is on.
+    pub(super) fn screenshots_record_counterparts(&self, slot: HotkeySlot) -> Vec<HotkeyBinding> {
+        let mut others = Vec::new();
+        if !cfg!(target_os = "macos") {
+            return others;
+        }
+        #[cfg(not(hex_capture))]
+        let _ = slot;
+        #[cfg(hex_capture)]
+        if slot.is_annotate_capture() {
+            if let Some(record) = &self.screenshots.record_hotkey {
+                others.push(record.clone());
+            }
+        } else if slot == HotkeySlot::ScreenshotRecord {
+            others.push(self.capture.hotkey.clone());
+            if let Some(replay) = &self.capture.replay_hotkey {
+                others.push(replay.clone());
+            }
+        }
+        others
+    }
+}
+
+impl HotkeySlot {
+    /// One of Annotate's own capture shortcuts: its capture, and its 15 s
+    /// replay.
+    pub(super) fn is_annotate_capture(self) -> bool {
+        #[cfg(hex_capture)]
+        {
+            matches!(self, Self::Capture | Self::CaptureReplay)
+        }
+        #[cfg(not(hex_capture))]
+        {
+            let _ = self;
+            false
+        }
     }
 }
 

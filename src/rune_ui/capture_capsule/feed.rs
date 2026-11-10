@@ -108,13 +108,16 @@ impl Follow {
             return inputs;
         }
         // A stopped recording folds unless it failed, which still shows.
-        if std::mem::take(&mut self.clip)
+        // A failed clip keeps `clip` until the failure is handled, so its
+        // helper returns to the picker.
+        if self.clip
             && let Some((bundle, Stage::Recording)) = &self.shown
             && !snapshot
                 .last
                 .as_ref()
                 .is_some_and(|last| last.bundle == *bundle && last.stage == Stage::Failed)
         {
+            self.clip = false;
             self.shown = None;
             inputs.push(Input::Gone);
             return inputs;
@@ -127,6 +130,17 @@ impl Follow {
         inputs.extend(stage);
         inputs.extend(self.routed(snapshot));
         inputs
+    }
+
+    /// What a helper this capture opens should return to: a Screenshots
+    /// recording (`clip`) reopens its picker, any other capture records the
+    /// screen.
+    fn asked_by(&self) -> AskedBy {
+        if self.clip {
+            AskedBy::Screenshots { record: true }
+        } else {
+            AskedBy::Capture
+        }
     }
 
     /// What the router's news for the shown capture tells the capsule. The
@@ -386,7 +400,7 @@ pub(crate) fn follow(capsule: CaptureCapsule, ink: InkOverlay) {
                     if let Input::Failed(Failure::Start | Failure::Save, _) = &input
                         && screen_off()
                     {
-                        show_helper(&capsule, CaptureNeed::ScreenRecording, AskedBy::Capture);
+                        show_helper(&capsule, CaptureNeed::ScreenRecording, follow.asked_by());
                         continue;
                     }
                     capsule.input(input);
@@ -394,7 +408,12 @@ pub(crate) fn follow(capsule: CaptureCapsule, ink: InkOverlay) {
                 // Sent with only the voice and marks: the helper follows
                 // once its capsule folds.
                 if screenless && screen_off() {
-                    show_helper(&capsule, CaptureNeed::ScreenRecording, AskedBy::Capture);
+                    show_helper(&capsule, CaptureNeed::ScreenRecording, follow.asked_by());
+                }
+                // The capture the clip flag describes settled: a later
+                // failure is its own.
+                if follow.clip && !matches!(follow.shown, Some((_, Stage::Recording))) {
+                    follow.clip = false;
                 }
             }
         });
@@ -671,6 +690,42 @@ mod tests {
         );
         assert_eq!(follow.next(&finishing("a", Stage::Writing, false)), []);
         assert_eq!(follow.next(&settled("a", Stage::Done)), []);
+    }
+
+    /// A Screenshots recording that fails keeps its picker origin until the
+    /// helper is shown; one that folds normally leaves nothing behind.
+    #[test]
+    fn a_failed_screenshots_recording_asks_for_its_picker() {
+        let mut follow = Follow::default();
+        let mut clip = recording("a");
+        clip.recording.as_mut().unwrap().clip = true;
+        follow.next(&clip);
+        assert_eq!(follow.asked_by(), AskedBy::Screenshots { record: true });
+        let mut failed = settled("a", Stage::Failed);
+        failed.last.as_mut().unwrap().error = Some("screen recording stopped".into());
+        assert_eq!(
+            follow.next(&failed),
+            [Input::Failed(
+                Failure::Save,
+                Some("screen recording stopped".into())
+            )]
+        );
+        assert_eq!(
+            follow.asked_by(),
+            AskedBy::Screenshots { record: true },
+            "kept until the follow thread shows its helper"
+        );
+
+        let mut follow = Follow::default();
+        let mut clip = recording("a");
+        clip.recording.as_mut().unwrap().clip = true;
+        follow.next(&clip);
+        follow.next(&finishing("a", Stage::Stopping, false));
+        assert_eq!(
+            follow.asked_by(),
+            AskedBy::Capture,
+            "a folded clip leaves nothing behind"
+        );
     }
 
     #[test]
