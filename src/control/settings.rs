@@ -588,6 +588,11 @@ const KEYS: &[Key] = &[
         "Labs: a meeting's notes are written to their own file beside the transcript, sharing its name and linking back to it",
     ),
     key(
+        "labs.wait_for_live_mic",
+        Kind::Bool,
+        "Labs: when the microphone opens only while you dictate, the start sound and the indicator's colour wait until it delivers real audio (Linux)",
+    ),
+    key(
         "labs.expire_meeting_audio",
         Kind::Bool,
         "Labs: finished meetings drop their WAVs on meetings.audio_retention while their transcripts, notes, summary, and Markdown stay",

@@ -284,6 +284,13 @@ pub fn speakers_only() -> bool {
     on(SPEAKERS_ONLY) && Feature::SpeakersOnly.on_this_os()
 }
 
+/// The start sound and the HUD's color wait until a microphone opened by
+/// the shortcut delivers real audio (Linux; read as each dictation starts).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn wait_for_live_mic() -> bool {
+    on(WAIT_FOR_LIVE_MIC) && Feature::WaitForLiveMic.on_this_os()
+}
+
 /// A physical Caps Lock press starts and stops dictation, and its light
 /// follows Hex's recording and processing (macOS; read by the listener on
 /// every pass and by the event tap and HID tracker through their own flag).

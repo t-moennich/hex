@@ -198,6 +198,9 @@ pub struct LabsSettings {
     /// "While dictating" applies only while the default output is speakers;
     /// headphones are left alone.
     pub speakers_only: bool,
+    /// The start sound and the HUD's colour wait until a microphone opened
+    /// by the shortcut delivers real audio (Linux).
+    pub wait_for_live_mic: bool,
     /// Settings › Labs' groups opened or closed by hand, by `labs::Group`
     /// id; a group not here is open while it holds a lab that's on.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -267,6 +270,7 @@ impl Default for LabsSettings {
             transcribe_files: false,
             api_processing: false,
             speakers_only: false,
+            wait_for_live_mic: false,
             gnome_meeting_capsules: false,
             gnome_annotate: false,
             screenshots: false,

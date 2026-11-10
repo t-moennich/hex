@@ -58,6 +58,7 @@ impl Feature {
             | Self::VocabularyBiasing
             | Self::PauseBrowser
             | Self::SkipPauses
+            | Self::WaitForLiveMic
             | Self::VoiceFilter
             | Self::HideMenuBarIcon
             | Self::QuitClosesWindow

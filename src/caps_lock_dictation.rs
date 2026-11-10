@@ -171,6 +171,8 @@ impl LedModel {
             | DictationIndicatorEvent::Failed { .. } => self.capture = CaptureState::Idle,
             DictationIndicatorEvent::ConfigureDotScope(_)
             | DictationIndicatorEvent::DemoVoice
+            | DictationIndicatorEvent::AwaitingMic
+            | DictationIndicatorEvent::MicLive
             | DictationIndicatorEvent::Transcribing { .. }
             | DictationIndicatorEvent::Processing { .. } => {}
         }

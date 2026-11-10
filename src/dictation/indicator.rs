@@ -35,6 +35,14 @@ pub enum DictationIndicatorEvent {
     /// until the next `Reset`.
     DemoVoice,
     Started,
+    /// The microphone is open but has sent no real audio yet (Bluetooth
+    /// headsets, Labs › Start sound waits for a live mic): the HUD shows
+    /// dimmed grey until `MicLive`.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    AwaitingMic,
+    /// The microphone sends real audio: the HUD shows its normal color.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    MicLive,
     Meter {
         average: f32,
         // Dot scope follows `average`; the window's meters read
@@ -232,6 +240,8 @@ pub struct IndicatorModel {
     island: Option<Island>,
     /// The microphone's loudness, dBFS.
     loudness: f32,
+    /// Set by `AwaitingMic`, until the microphone is live or the dictation ends.
+    awaiting_mic: bool,
     /// HUD Lab's synthetic voice and how far into it Dot scope is.
     demo_voice: Option<f32>,
     /// Since an event, until a step finds everything settled out of sight.
@@ -252,6 +262,7 @@ impl IndicatorModel {
             tuning,
             island: None,
             loudness: SILENT,
+            awaiting_mic: false,
             demo_voice: None,
             active: false,
         }
@@ -299,6 +310,7 @@ impl IndicatorModel {
                 self.phase = Phase::Hidden;
                 self.completion_pending = false;
                 self.loudness = SILENT;
+                self.awaiting_mic = false;
                 self.demo_voice = None;
             }
             DictationIndicatorEvent::ConfigureDotScope(tuning) => {
@@ -316,14 +328,25 @@ impl IndicatorModel {
                 self.phase_started = now;
                 self.completion_pending = false;
                 self.loudness = SILENT;
+                self.awaiting_mic = false;
                 self.stage = Stage::Recording;
                 self.scope.restart(reduce);
+            }
+            DictationIndicatorEvent::AwaitingMic => {
+                self.awaiting_mic = true;
+            }
+            DictationIndicatorEvent::MicLive => {
+                if self.awaiting_mic {
+                    self.awaiting_mic = false;
+                    self.scope.pulse(reduce);
+                }
             }
             DictationIndicatorEvent::Meter { average, .. } => {
                 self.loudness = dot_scope::loudness(average);
             }
             DictationIndicatorEvent::Submitted { job_id } => {
                 self.capturing = false;
+                self.awaiting_mic = false;
                 self.jobs.insert(job_id);
                 self.show_pipeline(now);
             }
@@ -356,6 +379,7 @@ impl IndicatorModel {
 
     fn finish_capture(&mut self, now: Instant, empty_phase: Phase) {
         self.capturing = false;
+        self.awaiting_mic = false;
         if !matches!(empty_phase, Phase::Hidden) {
             self.phase_started = now;
         }
@@ -437,6 +461,7 @@ impl IndicatorModel {
                 visible,
                 loudness,
                 reduce_motion: reduce,
+                waiting: self.awaiting_mic,
             },
         );
         self.active = visible || !self.scope.settled();
@@ -574,6 +599,35 @@ mod tests {
 
     fn lit(frame: &DotFrame) -> u32 {
         frame.dots.iter().map(|[power, _]| u32::from(*power)).sum()
+    }
+
+    #[test]
+    fn a_silent_microphone_dims_the_hud_until_it_is_live() {
+        let start = Instant::now();
+        let mut model = IndicatorModel::new(Tuning::default(), start);
+        model.handle(DictationIndicatorEvent::Started, start, false);
+        model.handle(DictationIndicatorEvent::AwaitingMic, start, false);
+        let waiting = run(&mut model, start, 0.0, 1.0);
+        assert!(waiting.last().unwrap().pose.wait > 0.99);
+        model.handle(DictationIndicatorEvent::MicLive, at(start, 1.0), false);
+        let live = run(&mut model, start, 1.0, 1.5);
+        assert!(live.last().unwrap().pose.wait < 0.01);
+        assert!(live.iter().any(|frame| frame.pose.glow > 0.3), "a pulse");
+
+        for end in [
+            DictationIndicatorEvent::Cancelled,
+            DictationIndicatorEvent::Discarded,
+            DictationIndicatorEvent::Submitted { job_id: 1 },
+            DictationIndicatorEvent::Reset,
+        ] {
+            model.handle(DictationIndicatorEvent::AwaitingMic, at(start, 3.0), false);
+            assert!(model.awaiting_mic);
+            model.handle(end, at(start, 3.0), false);
+            assert!(!model.awaiting_mic);
+        }
+        model.handle(DictationIndicatorEvent::AwaitingMic, at(start, 4.0), false);
+        model.handle(DictationIndicatorEvent::Started, at(start, 4.0), false);
+        assert!(!model.awaiting_mic);
     }
 
     /// A hot Linux microphone speaks near −18 dBFS RMS, which a fixed gain

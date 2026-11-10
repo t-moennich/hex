@@ -1698,6 +1698,11 @@ Record -> Release -> Transcribing/processing/paste -> Finished // dictate.feedba
      -> Hold reaches 300 ms -> Tone already played; mute/pause/sleep begin now
      -> Release microphone while idle -> Output warms on press; tone once
         the microphone is open and the hold counts
+     -> Release microphone while idle + Labs > Start sound waits for a live mic
+        (Linux) -> no tone at the first chunk; it plays once the microphone
+        sends a full 100 ms window above -91 dBFS RMS, and the HUD shows a
+        dimmed grey look until then. A release before that plays no start tone
+        // thresholds measured on one Bluetooth headset; real headset testing is pending
   Dictation pasted >= 2 s after the stop tone -> Done tone      // dictate.done-tone
      -> Pasted sooner (the usual case) -> Stop tone only; `DONE_MIN_AFTER_STOP`
      -> Stop tone still waiting on Lower audio -> Stop only, never done first

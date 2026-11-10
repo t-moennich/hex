@@ -100,7 +100,8 @@ struct DotUniforms {
     // indicator's ears (y 1): the notch's half width, the mode, the voice's
     // 0–1 level, and seconds into the stage.
     field: vec4f,
-    // The notch indicator's done and failed, 0 to 1.
+    // The notch indicator's done and failed, 0 to 1, then the dots' light
+    // (1 live, less while the microphone is silent).
     ears: vec4f,
 }
 
@@ -322,14 +323,15 @@ fn dot_scope_fragment(in: Varyings) -> @location(0) vec4f {
                 * mix(1.0, mix(0.82, 1.0, fresh), sstep(0.03, 0.2, power)) * pitch;
             let core = clamp(power * power * 1.1, 0.0, 0.9) * mix(0.3, 1.0, fresh);
             let color = mix(u.base.rgb, u.core.rgb, core);
+            let light = u.ears.z;
             let from_center = length(point - center);
             if (power > 0.05) {
                 composite(
                     &result,
                     color,
-                    0.132 * power * power * mask * shape * coverage(from_center - dot_radius * 2.0, aa));
+                    0.132 * power * power * mask * shape * light * coverage(from_center - dot_radius * 2.0, aa));
             }
-            composite(&result, color, alpha * mask * shape * coverage(from_center - dot_radius, aa));
+            composite(&result, color, alpha * mask * shape * light * coverage(from_center - dot_radius, aa));
         }
     }
 

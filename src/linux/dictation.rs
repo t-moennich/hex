@@ -21,6 +21,7 @@ use crate::feedback::{self, Tone};
 use crate::linux::input::{
     CommandQueue, HotkeyEvent, HotkeyOptions, HotkeyStatus, LinuxHotkey, LinuxHotkeyMonitor,
 };
+use crate::linux::live_mic::LiveWait;
 use crate::linux::paste::LinuxPaster;
 use crate::linux::rune_hud::LinuxIndicator;
 use crate::transcription::engine::{PendingTranscript, TranscriptionEngine};
@@ -28,9 +29,11 @@ use crate::transcription::local_transcriber::LocalTranscriber;
 
 const UPDATE_INTERVAL: Duration = Duration::from_millis(20);
 
+mod clock;
 mod gap;
 mod shortcuts;
 
+use clock::StreamClock;
 use gap::{ChunkStep, chunk_step};
 use shortcuts::shortcuts;
 
@@ -83,42 +86,6 @@ struct Finishing {
     print: Option<PrintReply>,
     flavour: crate::dictation::DictationFlavour,
     released: Instant,
-}
-
-/// Where the microphone stream's clock stands between chunks: the newest
-/// chunk's end plus the time since it arrived. PipeWire and ALSA can deliver
-/// large chunks (#1309), so the newest audio may trail a press by most of
-/// one; shortcut presses and releases are placed here instead.
-#[derive(Default)]
-struct StreamClock {
-    newest: Option<(CaptureInstant, Instant)>,
-}
-
-impl StreamClock {
-    /// A stalled stream's lag is not counted past this.
-    const MAX_LAG: Duration = Duration::from_secs(2);
-
-    fn chunk(&mut self, captured_through: CaptureInstant, received: Instant) {
-        self.newest = Some((captured_through, received));
-    }
-
-    /// A replaced or reopened stream keeps its own clock: nothing of the old
-    /// one carries over.
-    fn reset(&mut self) {
-        self.newest = None;
-    }
-
-    /// The end of the newest chunk.
-    fn through(&self) -> CaptureInstant {
-        self.newest
-            .map_or(CaptureInstant::ZERO, |(through, _)| through)
-    }
-
-    /// The stream time at `now`; `None` before this stream's first chunk.
-    fn at(&self, now: Instant) -> Option<CaptureInstant> {
-        let (through, received) = self.newest?;
-        Some(through + now.saturating_duration_since(received).min(Self::MAX_LAG))
-    }
 }
 
 struct OutputWorker {
@@ -528,6 +495,9 @@ pub(crate) fn run(
     // A press that arrived while the microphone was opening, or before its
     // stream's first chunk; recording starts at that chunk.
     let mut start_pending = false;
+    // Labs › Start sound waits for a live mic: held for a press that opened
+    // the microphone, until it delivers real audio.
+    let mut live_wait = LiveWait::default();
     let mut clock = StreamClock::default();
     // The end of the last chunk on this stream's timeline; reset whenever
     // the stream is closed, replaced, or reopened.
@@ -888,6 +858,12 @@ pub(crate) fn run(
                         if !audio_ready {
                             input.request_open();
                         }
+                        live_wait.arm(
+                            !audio_ready && release_while_idle && crate::labs::wait_for_live_mic(),
+                        );
+                        if live_wait.waiting() {
+                            indicator.await_mic();
+                        }
                         feedback::prepare();
                     } else {
                         continue;
@@ -1024,6 +1000,11 @@ pub(crate) fn run(
             )?;
         }
 
+        // A release, cancel, discard, or failed open ends the wait.
+        if (finishing.is_some() || !(capture.is_recording() || start_pending)) && live_wait.clear()
+        {
+            indicator.drop_wait();
+        }
         indicator.update(capture.is_recording() || start_pending, pending);
         match input.recv_timeout(
             UPDATE_INTERVAL,
@@ -1109,8 +1090,11 @@ pub(crate) fn run(
                     // The stream's first chunk arrived while the shortcut is
                     // held: recording starts here, without pre-roll.
                     start_pending = false;
+                    let waits = live_wait.begin(sample_rate);
                     start_capture(&mut capture, captured_through, Duration::ZERO, || {
-                        feedback::play_provisional_start();
+                        if !waits {
+                            feedback::play_provisional_start();
+                        }
                     });
                 }
                 if service.is_starting() && !capture.is_recording() {
@@ -1141,6 +1125,10 @@ pub(crate) fn run(
                 timeline.feed(&samples, sample_rate, captured_through);
                 capture.ingest(captured, captured_through);
                 last_captured_through = Some(captured_through);
+                if capture.is_recording() && live_wait.feed(captured) {
+                    feedback::play(Tone::DictationStart);
+                    indicator.mic_live();
+                }
                 if capture.is_recording() {
                     indicator.meter(captured);
                     service.audio(captured, Instant::now());

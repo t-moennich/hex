@@ -29,6 +29,10 @@ static HUD: OnceLock<HudSender> = OnceLock::new();
 pub(crate) struct LinuxIndicator {
     generation: Option<u64>,
     recording: bool,
+    /// The microphone has sent no real audio yet (Labs › Start sound waits
+    /// for a live mic), and what the HUD was last told about it.
+    waiting: bool,
+    waiting_sent: bool,
     /// Submitted dictations still being transcribed or pasted, oldest first.
     jobs: VecDeque<u64>,
     next_job: u64,
@@ -48,6 +52,8 @@ impl LinuxIndicator {
         let indicator = Self {
             generation,
             recording: false,
+            waiting: false,
+            waiting_sent: false,
             jobs: VecDeque::new(),
             next_job: 0,
         };
@@ -72,6 +78,16 @@ impl LinuxIndicator {
     pub(crate) fn update(&mut self, recording: bool, pending: usize) {
         if recording && !self.recording {
             self.send(HudEvent::Started);
+            self.waiting_sent = false;
+        }
+        // After Started, which clears the HUD's waiting look.
+        if recording && self.waiting != self.waiting_sent {
+            self.send(if self.waiting {
+                HudEvent::AwaitingMic
+            } else {
+                HudEvent::MicLive
+            });
+            self.waiting_sent = self.waiting;
         }
         let submitted = pending > self.jobs.len();
         while pending > self.jobs.len() {
@@ -90,7 +106,28 @@ impl LinuxIndicator {
                 self.send(HudEvent::JobCancelled { job_id });
             }
         }
+        if !recording {
+            self.waiting_sent = false;
+        }
         self.recording = recording;
+    }
+
+    /// The microphone has sent no real audio yet: the HUD dims once the
+    /// dictation shows.
+    pub(crate) fn await_mic(&mut self) {
+        self.waiting = true;
+    }
+
+    /// The microphone is live: the HUD returns to its color with a pulse.
+    pub(crate) fn mic_live(&mut self) {
+        self.waiting = false;
+    }
+
+    /// The dictation ended or was dropped before the microphone was live;
+    /// its end clears the HUD, so nothing is sent.
+    pub(crate) fn drop_wait(&mut self) {
+        self.waiting = false;
+        self.waiting_sent = false;
     }
 
     /// The oldest submitted dictation finished: pasted, or failed with why.

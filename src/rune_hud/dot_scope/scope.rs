@@ -17,6 +17,9 @@ const START_WIDTH: f32 = 30.0;
 const ENTER: f32 = 0.42;
 const WIPE: f32 = 0.3;
 const PASS_INSET: f32 = 9.0;
+/// The glow a live microphone's pulse adds, and how fast it fades, seconds.
+const CUE_GLOW: f32 = 0.8;
+const CUE_DECAY: f32 = 0.3;
 const PHOSPHOR_HEAD: f32 = 0.15;
 const BREATH_PERIOD: f32 = 5.5;
 const HIDDEN_SCALE: f32 = 0.9;
@@ -71,6 +74,8 @@ pub struct Frame {
     /// The microphone's loudness, dBFS ([`super::loudness`]).
     pub loudness: f32,
     pub reduce_motion: bool,
+    /// The microphone is open but has sent no real audio yet.
+    pub waiting: bool,
 }
 
 /// The plate's pose and the field's global terms, for the shader.
@@ -96,6 +101,8 @@ pub struct Pose {
     pub clock: f32,
     /// 1 once the dictation is done, else 0.
     pub done: f32,
+    /// 0 live, easing to 1 while the microphone has sent no real audio.
+    pub wait: f32,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -406,6 +413,9 @@ pub struct Scope {
     softness: Spring,
     cool: Spring,
     fail: Spring,
+    wait: Spring,
+    /// A short glow when the microphone goes live, 1 decaying to 0.
+    cue: f32,
 }
 
 impl Scope {
@@ -445,6 +455,8 @@ impl Scope {
             softness: Spring::at(HIDDEN_SOFTNESS),
             cool: Spring::at(0.0),
             fail: Spring::at(0.0),
+            wait: Spring::at(0.0),
+            cue: 0.0,
         };
         scope.resize();
         scope
@@ -460,6 +472,13 @@ impl Scope {
             self.scale.jump(1.0);
             self.softness.jump(0.0);
             self.width.jump(self.tuning.width);
+        }
+    }
+
+    /// Flashes the glow once, as the microphone goes live.
+    pub fn pulse(&mut self, reduce_motion: bool) {
+        if !reduce_motion {
+            self.cue = 1.0;
         }
     }
 
@@ -517,7 +536,8 @@ impl Scope {
             softness: self.softness.x.clamp(0.0, HIDDEN_SOFTNESS),
             cool: self.cool.x.clamp(0.0, 1.0),
             fail: self.fail.x.clamp(0.0, 1.0),
-            glow: (self.traces[0].glow + self.traces[1].glow) / 2.0 * self.tuning.glow,
+            glow: (self.traces[0].glow + self.traces[1].glow) / 2.0 * self.tuning.glow
+                + CUE_GLOW * self.cue,
             grid: self.grid,
             live: self.live,
             reveal: ((self.scale.x - HIDDEN_SCALE) / (1.0 - HIDDEN_SCALE)).max(0.0),
@@ -528,6 +548,7 @@ impl Scope {
                 self.elapsed
             },
             done: if self.stage == Stage::Done { 1.0 } else { 0.0 },
+            wait: self.wait.x.clamp(0.0, 1.0),
         }
     }
 
@@ -611,6 +632,12 @@ impl Scope {
         } else {
             0.0
         };
+        let wait = if frame.waiting && frame.visible {
+            1.0
+        } else {
+            0.0
+        };
+        self.cue *= (-h / CUE_DECAY).exp();
         let shown = if frame.visible { 1.0 } else { 0.0 };
         let fade = Spec::new(tuning.transition, 0.0);
         let bouncy = Spec::new(tuning.transition, tuning.bounce);
@@ -621,6 +648,7 @@ impl Scope {
             self.opacity.step_to(shown, REDUCED_FADE, h);
             self.cool.step_to(cool, REDUCED_FADE, h);
             self.fail.step_to(fail, REDUCED_FADE, h);
+            self.wait.step_to(wait, REDUCED_FADE, h);
         } else {
             self.width.step_to(width, bouncy, h);
             self.opacity.step_to(shown, fade, h);
@@ -630,6 +658,7 @@ impl Scope {
                 .step_to(if frame.visible { 0.0 } else { HIDDEN_SOFTNESS }, fade, h);
             self.cool.step_to(cool, fade, h);
             self.fail.step_to(fail, fade, h);
+            self.wait.step_to(wait, fade, h);
         }
 
         self.elapsed += h;
@@ -900,11 +929,16 @@ impl Scope {
     }
 }
 
+/// How much of the dots' light a waiting microphone takes away.
+const WAIT_DIM: f32 = 0.55;
+
 /// Dot scope's colours for one frame, sRGB.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
     pub base: [f32; 3],
     pub core: [f32; 3],
+    /// How much of the dots' light shows: 1 live, less while waiting.
+    pub dots: f32,
     pub plate: [f32; 4],
     pub rim: [f32; 4],
     pub shadow: [f32; 4],
@@ -956,9 +990,12 @@ pub fn palette(dark: bool, pose: &Pose, saturation: f32) -> Palette {
             [20.0 / 255.0, 24.0 / 255.0, 40.0 / 255.0, 0.2],
         )
     };
+    // Waiting drains the color to grey and dims the dots.
+    let color = saturation * (1.0 - pose.wait);
     Palette {
-        base: saturate(base, saturation),
-        core: saturate(core, saturation),
+        base: saturate(base, color),
+        core: saturate(core, color),
+        dots: 1.0 - WAIT_DIM * pose.wait,
         plate,
         rim,
         shadow,
@@ -983,6 +1020,7 @@ mod tests {
             visible: true,
             loudness: -40.0 + 30.0 * level,
             reduce_motion: false,
+            waiting: false,
         }
     }
 
@@ -1315,5 +1353,37 @@ mod tests {
         assert!((grey.base[0] - grey.base[2]).abs() < 1e-6);
         let cool = palette(false, &Pose { cool: 1.0, ..pose }, 1.0);
         assert_eq!(cool.base, [0.40, 0.47, 0.58]);
+    }
+
+    #[test]
+    fn waiting_palette_is_grey_and_dimmer_and_live_is_unchanged() {
+        let pose = Scope::new(fixed()).pose();
+        let live = palette(true, &pose, 1.0);
+        assert_eq!(live.dots, 1.0);
+        let waiting = palette(true, &Pose { wait: 1.0, ..pose }, 1.0);
+        for color in [waiting.base, waiting.core] {
+            assert!((color[0] - color[1]).abs() < 1e-6 && (color[1] - color[2]).abs() < 1e-6);
+        }
+        assert!(waiting.dots < 0.5, "dimmer: {}", waiting.dots);
+        assert_ne!(waiting.base, live.base);
+    }
+
+    #[test]
+    fn waiting_eases_in_and_out_and_a_live_mic_pulses_the_glow() {
+        let mut scope = Scope::new(fixed());
+        let waiting = Frame {
+            waiting: true,
+            ..recording(0.0)
+        };
+        run(&mut scope, 1.0, waiting);
+        assert!(scope.pose().wait > 0.99);
+        let before = scope.pose().glow;
+        scope.pulse(false);
+        assert!(scope.pose().glow > before + 0.3);
+        run(&mut scope, 1.5, recording(0.0));
+        assert!(scope.pose().wait < 0.01);
+        assert!(scope.pose().glow < before + 0.05, "the pulse has faded");
+        scope.pulse(true);
+        assert!(scope.pose().glow < before + 0.05, "Reduce Motion skips it");
     }
 }

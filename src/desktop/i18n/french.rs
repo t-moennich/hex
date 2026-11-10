@@ -1247,6 +1247,8 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("If another app comes to the front while you dictate, Hex switches back to the app you started in before pasting. If it can't, nothing is pasted and Paste last dictation has the text.", "Si une autre app passe au premier plan pendant que vous dictez, Hex revient à l'app où vous avez commencé avant de coller. S'il n'y arrive pas, rien n'est collé et Coller la dernière dictée garde le texte."),
     ("Only on speakers", "Haut-parleurs uniquement"),
     ("Apply \"While dictating\" only when sound plays through speakers. Headphones are left alone.", "Applique « Pendant la dictée » uniquement quand le son sort des haut-parleurs. Les écouteurs ne sont pas touchés."),
+    ("Start sound waits for a live mic", "Le son de départ attend un micro actif"),
+    ("When the mic opens only while you dictate, the start sound and the indicator's color wait until it sends real audio. Bluetooth headsets can take a few seconds", "Quand le micro ne s'ouvre que pendant la dictée, le son de départ et la couleur de l'indicateur attendent qu'il envoie du vrai son. Les casques Bluetooth peuvent mettre quelques secondes"),
 ];
 
 #[cfg(test)]

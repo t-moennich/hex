@@ -886,6 +886,11 @@ General                                  // settings
 │   │   Open while idle; pre-roll available
 │   └── On -> "The mic opens only while you dictate; the first moment can be clipped"
 │       Open on press; no pre-roll; startup delay
+│   └── Labs > Start sound waits for a live mic (Linux; off)   // labs.wait_for_live_mic
+│       └── On, with the mic opening on the press -> the start sound and the HUD's color wait
+│           until the mic sends real audio (a full 100 ms window above -91 dBFS RMS);
+│           until then the HUD shows a dimmed grey look; Bluetooth headsets can send silence for seconds
+│           // thresholds from one headset at 48 kHz; real headset testing is pending
 ├── While dictating -> Mute / Pause media / Lower audio / Do nothing
 │   ├── Lower audio -> Lower to slider, 0–100% of the previous volume (default 20%)
 │   ├── Intentional capture only, not ordinary shortcut chords
@@ -1709,6 +1714,8 @@ Linux beta                               // not macOS feature parity
 │   └── Ctrl+Q in the window or Quit Hex in the sidebar -> quits Hex (#808)
 │       // check: ctrl_q_quits_hex (fixture; not run on a GNOME session)
 ├── Recording sounds -> Shortcut press / capture stop
+│   └── Labs > Start sound waits for a live mic (off) -> with the mic opening on the press,
+│       the start sound plays when the mic sends real audio, not at its first chunk
 ├── Shortcuts -> One state machine, three sources        // linux.shortcuts
 │   ├── X11 -> Root-window key grabs; General records the chord
 │   ├── Wayland + GlobalShortcuts portal -> Desktop grants the triggers
@@ -1794,6 +1801,8 @@ Linux beta                               // not macOS feature parity
 ├── Recording HUD -> Dot scope, as on macOS, on the
 │   │   top or bottom edge, recording with the voice's level, then transcribing
 │   │   until accepted output finishes; Hidden position -> none   // linux.hud
+│   ├── Labs > Start sound waits for a live mic (off) -> from the press until the mic sends real
+│   │   audio the dots are dimmed grey; when it does they take their color back with a short glow
 │   ├── Display -> picked at each capture start (#486)
 │   │   ├── X11 -> the monitor under the pointer (XRandR monitors); while shown,
 │   │   │   checked every 250 ms; moves once two checks agree (#807)

@@ -180,6 +180,12 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
                                          // a_failed_wsl_request_forgets_the_workspace, a_not_found_wsl_request_forgets_the_workspace,
                                          // a_wsl_request_failure_reads_as_the_capsule_expects,
                                          // opencode_in_wsl_is_its_own_bit_and_windows_only; not run on a real Windows PC with WSL
+├── Start sound waits for a live mic no labs.wait_for_live_mic (Linux) with Turn off the mic when not dictating, the start sound and
+│                                        the HUD's color wait until the microphone sends real audio; until then the HUD is dimmed grey
+│                                        // checks: LiveMicGate and LiveWait tests (linux/live_mic.rs),
+│                                        // a_silent_microphone_dims_the_hud_until_it_is_live (dictation/indicator.rs),
+│                                        // wait_for_live_mic_is_its_own_bit_and_off_by_default (labs.rs);
+│                                        // not tried on a real headset
 └── Only on speakers no   labs.speakers_only            (every OS) While dictating (Mute, Lower audio, Pause
                                          media) applies only while the default output is speakers; wired or Bluetooth
                                          headphones leave the output and media alone for that recording or capture, and
@@ -2458,6 +2464,33 @@ route, so a skipped recording keeps the setting's pre-roll. Checks:
 [labs.rs](../../src/labs.rs). Not yet observed: a real Mac with wired and
 Bluetooth headphones and the lab on, and the Linux and Windows backends on a
 real desktop.
+
+Start sound waits for a live mic (`wait-for-live-mic`, Linux): a Bluetooth
+headset opens its stream in about 40 ms but sends exact zeros, then codec
+noise, for seconds before the microphone is live. With "Turn off the mic when
+not dictating" on, the start sound used to play at the first (silent) chunk.
+While this is on and the press opened the stream, the listener holds the start
+sound back and feeds each recorded chunk to `LiveMicGate`
+([linux/live_mic.rs](../../src/linux/live_mic.rs)), which calls the stream
+live once a 100 ms window has an RMS above -91 dBFS (measured on one headset
+at 48 kHz: zeros for 1.1 s, then codec noise at -96 to -100 dBFS with the
+loudest window at -94.8 dBFS, then live audio from 4.3 s with the quietest
+window at -88.0 dBFS). The HUD gets `AwaitingMic` right after `Started` and
+shows a dimmed grey look (colors drained to grey, dots about 55% dimmer);
+`MicLive` plays the start sound with `feedback::play(Tone::DictationStart)`
+and returns the HUD to its color with a short glow. A release, cancel, short
+tap, failed open, or new capture ends the wait with no start sound. The mic
+kept open, the lab off, and the other platforms behave as before. Checks: the
+`LiveMicGate` and `LiveWait` tests in
+[live_mic.rs](../../src/linux/live_mic.rs);
+`a_silent_microphone_dims_the_hud_until_it_is_live` in
+[indicator.rs](../../src/dictation/indicator.rs);
+`waiting_palette_is_grey_and_dimmer_and_live_is_unchanged` and
+`waiting_eases_in_and_out_and_a_live_mic_pulses_the_glow` in
+[scope.rs](../../src/rune_hud/dot_scope/scope.rs);
+`wait_for_live_mic_is_its_own_bit_and_off_by_default` in
+[labs.rs](../../src/labs.rs). Not yet observed: a real Bluetooth headset with
+the lab on; the -91 dBFS threshold comes from one headset's measurements.
 
 Checks: `labs_is_one_flat_list_of_toggles_off_by_default`,
 `contributed_options_are_labs_toggles_off_by_default`,

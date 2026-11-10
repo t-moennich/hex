@@ -157,7 +157,8 @@ impl Feature {
             | Self::OpenCodeInWsl
             | Self::TranscribeFiles
             | Self::ApiProcessing
-            | Self::SpeakersOnly => Audience::Everyone,
+            | Self::SpeakersOnly
+            | Self::WaitForLiveMic => Audience::Everyone,
         }
     }
 
@@ -230,6 +231,7 @@ impl Feature {
             | Self::ReturnToApp
             | Self::SpeakersOnly
             | Self::MeetingNotesFile => 20261109,
+            Self::WaitForLiveMic => 20261110,
         }
     }
 
@@ -282,7 +284,8 @@ impl Feature {
             | Self::TypedText
             | Self::GnomeMeetingCapsules
             | Self::GnomeAnnotate
-            | Self::LiveTyping => cfg!(target_os = "linux"),
+            | Self::LiveTyping
+            | Self::WaitForLiveMic => cfg!(target_os = "linux"),
             Self::StandaloneSpecialKeys | Self::SkipPauses | Self::TerminalPasteShortcut => {
                 cfg!(any(target_os = "linux", target_os = "windows"))
             }
@@ -419,6 +422,7 @@ impl Feature {
             Self::TranscribeFiles => "transcribe-files",
             Self::ApiProcessing => "api-processing",
             Self::SpeakersOnly => "speakers-only",
+            Self::WaitForLiveMic => "wait-for-live-mic",
         }
     }
 
@@ -493,6 +497,7 @@ impl Feature {
             Self::TranscribeFiles => "labs.transcribe_files",
             Self::ApiProcessing => "labs.api_processing",
             Self::SpeakersOnly => "labs.speakers_only",
+            Self::WaitForLiveMic => "labs.wait_for_live_mic",
         }
     }
 
@@ -571,6 +576,7 @@ impl Feature {
             Self::TranscribeFiles => settings.labs.transcribe_files,
             Self::ApiProcessing => settings.labs.api_processing,
             Self::SpeakersOnly => settings.labs.speakers_only,
+            Self::WaitForLiveMic => settings.labs.wait_for_live_mic,
         }
     }
 
@@ -647,6 +653,7 @@ impl Feature {
             &mut labs.transcribe_files,
             &mut labs.api_processing,
             &mut labs.speakers_only,
+            &mut labs.wait_for_live_mic,
         ]
     }
 
@@ -728,6 +735,7 @@ impl Feature {
             Self::TranscribeFiles => settings.labs.transcribe_files = on,
             Self::ApiProcessing => settings.labs.api_processing = on,
             Self::SpeakersOnly => settings.labs.speakers_only = on,
+            Self::WaitForLiveMic => settings.labs.wait_for_live_mic = on,
             // Off, no shortcut keeps a key only the feature allows.
             Self::StandaloneSpecialKeys => {
                 settings.labs.standalone_special_keys = on;
@@ -819,6 +827,9 @@ const SPEAKERS_ONLY: u64 = RETURN_TO_APP << 1;
 /// The next bit above Only on speakers' switch: a meeting's transcript and
 /// notes export to their own `<stem>.transcript.md` and `<stem>.notes.md`.
 const MEETING_NOTES_FILE: u64 = SPEAKERS_ONLY << 1;
+/// The next bit above Separate notes file's switch: the start sound and the
+/// HUD's color wait until the microphone delivers real audio (Linux).
+const WAIT_FOR_LIVE_MIC: u64 = MEETING_NOTES_FILE << 1;
 
 /// This process's `labs` switches: unknown until settings load or one is
 /// first read.
@@ -1035,6 +1046,11 @@ fn encode_where(settings: &LabsSettings, reaches: impl Fn(Feature) -> bool) -> u
             API_PROCESSING,
         ),
         (Feature::SpeakersOnly, settings.speakers_only, SPEAKERS_ONLY),
+        (
+            Feature::WaitForLiveMic,
+            settings.wait_for_live_mic,
+            WAIT_FOR_LIVE_MIC,
+        ),
         (
             Feature::GnomeMeetingCapsules,
             settings.gnome_meeting_capsules,
@@ -1568,6 +1584,22 @@ mod tests {
         assert_ne!(state & MEETING_NOTES_FILE, 0);
         assert_eq!(state & MEETING_DESCRIPTIVE_FILENAMES, 0);
         assert_eq!((state >> MINUTES_SHIFT) & MINUTES_MASK, 24 * 60);
+    }
+
+    #[test]
+    fn wait_for_live_mic_is_its_own_bit_and_off_by_default() {
+        let mut labs = LabsSettings::default();
+        assert_eq!(encode_where(&labs, |_| true) & WAIT_FOR_LIVE_MIC, 0);
+        labs.wait_for_live_mic = true;
+        labs.unload_idle_minutes = 24 * 60;
+        let state = encode_where(&labs, |_| true);
+        assert_ne!(state & WAIT_FOR_LIVE_MIC, 0);
+        assert_eq!(state & MEETING_NOTES_FILE, 0);
+        assert_eq!((state >> MINUTES_SHIFT) & MINUTES_MASK, 24 * 60);
+        assert_eq!(
+            Feature::WaitForLiveMic.on_this_os(),
+            cfg!(target_os = "linux")
+        );
     }
 
     #[test]

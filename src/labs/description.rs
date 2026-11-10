@@ -187,6 +187,9 @@ impl Feature {
             Self::SpeakersOnly => {
                 "Apply \"While dictating\" only when sound plays through speakers; headphones are left alone"
             }
+            Self::WaitForLiveMic => {
+                "When the mic opens only while you dictate, the start sound and the indicator's color wait until it sends real audio. Bluetooth headsets can take a few seconds"
+            }
         }
     }
 }

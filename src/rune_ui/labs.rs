@@ -670,6 +670,14 @@ fn rows(ui: &Ui) -> Vec<Row> {
             tr("Show Annotate's recording capsule and ink over your screen, through XWayland. Works only while XWayland is already running; Esc can't stop drawing there, so use the capsule's pen button or let go of a held Annotate key"),
         ));
     }
+    if caps.os == super::platform::Os::Linux {
+        rows.push(row(
+            Feature::WaitForLiveMic,
+            None,
+            tr("Start sound waits for a live mic"),
+            tr("When the mic opens only while you dictate, the start sound and the indicator's color wait until it sends real audio. Bluetooth headsets can take a few seconds"),
+        ));
+    }
     // Linux's and Windows' engines transcribe a whole clip on the CPU.
     if caps.os != super::platform::Os::Macos {
         rows.push(row(
@@ -917,6 +925,7 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::TranscribeFiles => "lab-transcribe-files",
         Feature::ApiProcessing => "lab-api-processing",
         Feature::SpeakersOnly => "lab-speakers-only",
+        Feature::WaitForLiveMic => "lab-wait-for-live-mic",
     }
 }
 
