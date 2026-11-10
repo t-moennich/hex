@@ -1248,14 +1248,12 @@ pub fn apply(
             ));
         }
         "labs.screenshots"
-            if candidate.labs.screenshots
-                && candidate
-                    .hotkey_in_use(HotkeySlot::Screenshot, &candidate.screenshots.hotkey) =>
+            if candidate.labs.screenshots && candidate.screenshots_shortcuts_in_use() =>
         {
             return Err(ControlError::new(
                 "shortcut-in-use",
-                "The screenshot shortcut is already in use; set screenshots.hotkey to another \
-                 shortcut first",
+                "A Screenshots shortcut is already in use; set screenshots.hotkey or \
+                 screenshots.record_hotkey to another shortcut first",
             ));
         }
         "labs.standalone_special_keys" => candidate.repair_special_keys(),
@@ -1480,6 +1478,30 @@ mod tests {
         } else {
             assert_eq!(refused, Some("unsupported"));
         }
+    }
+
+    /// A record shortcut and Annotate's shortcut can't share a chord: the
+    /// Lab refuses to turn on with its saved shortcut already taken, and
+    /// Annotate refuses to turn on over it, whichever order they arrive in.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_screenshot_lab_and_annotate_never_share_a_shortcut() {
+        let mut annotate_off = AppSettings {
+            capture: crate::app_settings::CaptureSettings {
+                enabled: false,
+                ..Default::default()
+            },
+            ..AppSettings::default()
+        };
+        annotate_off.labs.screenshots = true;
+        annotate_off.screenshots.record_hotkey = Some(annotate_off.capture.hotkey.clone());
+        let error = apply(&annotate_off, "capture.enabled", "true", &rules()).unwrap_err();
+        assert_eq!(error.code, "shortcut-in-use");
+
+        let mut lab_off = AppSettings::default();
+        lab_off.screenshots.record_hotkey = Some(lab_off.capture.hotkey.clone());
+        let error = apply(&lab_off, "labs.screenshots", "true", &rules()).unwrap_err();
+        assert_eq!(error.code, "shortcut-in-use");
     }
 
     fn rules() -> ShortcutRules {

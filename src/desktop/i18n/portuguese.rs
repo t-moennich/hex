@@ -305,6 +305,7 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Record your screen, draw on it, and talk over it with the shortcut below", "Grave a tela, desenhe sobre ela e comente com o atalho abaixo"),
     ("Off. Hex records nothing and keeps no shortcut until you turn this on.", "Desativado. O Hex não grava nada nem ocupa nenhum atalho até você ativar isto."),
     ("The capture shortcut is already in use. Change it below before turning captures on.", "O atalho de captura já está em uso. Altere-o abaixo antes de ativar as capturas."),
+    ("Another Hex shortcut already uses one of its saved shortcuts. Change that shortcut first", "Outro atalho do Hex já usa um dos atalhos salvos dele. Altere esse atalho primeiro"),
     ("Could not update Annotate:", "Não foi possível atualizar o Annotate:"),
     ("The model Hex dictates with, with a time for every word", "O modelo com que o Hex dita, com o tempo de cada palavra"),
     ("Apple's speech recognizer, as Scrawl uses", "O reconhecimento de voz da Apple, como o Scrawl usa"),

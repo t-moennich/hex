@@ -76,6 +76,9 @@ pub fn run(command: Option<&LabsCommand>) -> Result<()> {
     if !on && let Some(why) = feature.off_refusal(&settings) {
         return Err(eyre!(why));
     }
+    if on && let Some(why) = feature.on_refusal(&settings) {
+        return Err(eyre!(why));
+    }
     let state = if on { "on" } else { "off" };
     // A running Hex saves and applies it at once, as its Labs row would.
     if let Some(reply) = crate::control::cli::set_in_running_hex(

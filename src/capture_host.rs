@@ -84,11 +84,12 @@ mod timeline;
 pub use library::{
     explain as explain_capture, list as list_captures, send as send_capture, show as show_capture,
 };
+#[cfg(target_os = "macos")]
+pub use permissions::report_screenshots as report_screenshot_permission;
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 pub use permissions::{
-    CaptureNeed, NeedState, allow as allow_permission, on_missing,
-    report as report_missing_permission, restart as restart_for_permission,
-    state_of as permission_state,
+    AskedBy, CaptureNeed, NeedState, allow as allow_permission, on_missing,
+    restart as restart_for_permission, state_of as permission_state,
 };
 pub use replay::available as replay_available;
 pub use routing::CaptureRoute;

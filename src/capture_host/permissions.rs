@@ -46,6 +46,20 @@ pub enum NeedState {
     Restart,
 }
 
+/// What asked for the permission helper: a capture starting, or Labs ›
+/// Screenshots' picker. The helper's grant returns to what asked: a capture
+/// records the screen, while the picker opens again to shoot or record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AskedBy {
+    Capture,
+    /// Labs › Screenshots, which reopens to shoot, or to record when
+    /// `record` is set.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Screenshots {
+        record: bool,
+    },
+}
+
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn need_state(state: PermissionState) -> Option<NeedState> {
     match state {
@@ -148,22 +162,33 @@ pub fn restart() {
 #[cfg(not(target_os = "macos"))]
 pub fn restart() {}
 
-type Helper = Box<dyn Fn(CaptureNeed) + Send + Sync>;
+type Helper = Box<dyn Fn(CaptureNeed, AskedBy) + Send + Sync>;
 
 static HELPER: OnceLock<Helper> = OnceLock::new();
 
 /// Shows the permission helper with `show` whenever a capture is refused
 /// for a missing permission. The capsule sets it once; without it a refusal
 /// only answers with its error.
-pub fn on_missing(show: impl Fn(CaptureNeed) + Send + Sync + 'static) {
+pub fn on_missing(show: impl Fn(CaptureNeed, AskedBy) + Send + Sync + 'static) {
     let _ = HELPER.set(Box::new(show));
 }
 
-/// A capture (or a screenshot) was refused for `need`.
+/// A capture was refused for `need`.
 pub fn report(need: CaptureNeed) {
+    report_asked(need, AskedBy::Capture);
+}
+
+/// A screenshot or recording was refused for `need`: the helper returns to
+/// the Screenshots picker, to shoot or, with `record`, to record.
+#[cfg(target_os = "macos")]
+pub fn report_screenshots(need: CaptureNeed, record: bool) {
+    report_asked(need, AskedBy::Screenshots { record });
+}
+
+fn report_asked(need: CaptureNeed, asked_by: AskedBy) {
     #[cfg(target_os = "macos")]
     crate::desktop::permission_guide::clear_legacy_entries_async(need.kind());
     if let Some(show) = HELPER.get() {
-        show(need);
+        show(need, asked_by);
     }
 }

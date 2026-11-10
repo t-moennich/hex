@@ -12,7 +12,7 @@ use super::flow::{Action, Delivered, Dest, Failure, Grant, Input, Mode, Route, U
 use super::ink::InkOverlay;
 use super::picker::PickerOverlay;
 use crate::capture_host::{
-    CaptureCommand, CaptureNeed, CaptureRoute, CaptureSnapshot, CaptureTarget, NeedState,
+    AskedBy, CaptureCommand, CaptureNeed, CaptureRoute, CaptureSnapshot, CaptureTarget, NeedState,
     RouteAnswer, RouteDelivery, RouteDest,
 };
 
@@ -329,7 +329,7 @@ impl CaptureOverlays {
         super::ink::on_drawing(move |on| lit.input(Input::Drawing(on)));
         follow(capsule.clone(), ink.clone());
         let helper = capsule.clone();
-        crate::capture_host::on_missing(move |need| show_helper(&helper, need));
+        crate::capture_host::on_missing(move |need, asked_by| show_helper(&helper, need, asked_by));
         Self {
             capsule,
             picker,
@@ -386,7 +386,7 @@ pub(crate) fn follow(capsule: CaptureCapsule, ink: InkOverlay) {
                     if let Input::Failed(Failure::Start | Failure::Save, _) = &input
                         && screen_off()
                     {
-                        show_helper(&capsule, CaptureNeed::ScreenRecording);
+                        show_helper(&capsule, CaptureNeed::ScreenRecording, AskedBy::Capture);
                         continue;
                     }
                     capsule.input(input);
@@ -394,7 +394,7 @@ pub(crate) fn follow(capsule: CaptureCapsule, ink: InkOverlay) {
                 // Sent with only the voice and marks: the helper follows
                 // once its capsule folds.
                 if screenless && screen_off() {
-                    show_helper(&capsule, CaptureNeed::ScreenRecording);
+                    show_helper(&capsule, CaptureNeed::ScreenRecording, AskedBy::Capture);
                 }
             }
         });
@@ -477,6 +477,15 @@ pub(crate) fn act(action: Action) {
             command(CaptureCommand::FindPhone),
         ],
         Action::Start(target) => vec![command(CaptureCommand::Start(target))],
+        // The Screenshots picker's permission was granted: open it again,
+        // in the mode its shortcut asked for.
+        Action::OpenScreenshots { record } => {
+            #[cfg(target_os = "macos")]
+            crate::screenshots::open(record);
+            #[cfg(not(target_os = "macos"))]
+            let _ = record;
+            return;
+        }
         // What the picker would record, when it has nothing to record yet
         // (its windows still load): the pointer's display.
         // Wayland lists no windows: the portal's own picker chooses one.
@@ -526,8 +535,8 @@ fn screen_off() -> bool {
 }
 
 /// Opens the permission helper for `need` and follows its grant.
-fn show_helper(capsule: &CaptureCapsule, need: CaptureNeed) {
-    capsule.input(Input::NeedsPermission(need));
+fn show_helper(capsule: &CaptureCapsule, need: CaptureNeed, asked_by: AskedBy) {
+    capsule.input(Input::NeedsPermission(need, asked_by));
     watch_grant(capsule.clone(), need);
 }
 

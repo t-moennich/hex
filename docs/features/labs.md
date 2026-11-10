@@ -156,7 +156,8 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        // checks: gnome_annotate_is_its_own_bit_* (labs.rs), meeting capsule xwayland decision reused
 │                                        // (linux/meeting_capsules.rs); Rune's xwayland tests; not run on a GNOME session
 ├── Screenshots     no    labs.screenshots + screenshots.hotkey (default ⌘⇧4) + screenshots.record_hotkey (unbound) + screenshots.folder (macOS)
-│                                        the shortcut picks an area (Space: a window); the PNG goes on the clipboard, into the folder (Desktop), and into a corner thumbnail
+│                                        the shortcut picks an area (Space: a window); the PNG goes on the clipboard, into the folder (Desktop), and into a corner thumbnail;
+│                                        both shortcuts hold their keys while it is on, even with Annotate off, and it won't turn on while one is already in use
 ├── Annotate 15 s replay no labs.annotate_replay + capture.replay_hotkey (macOS 27+)
 │                                        keeps a rolling 15 s SCClipBufferingOutput screen buffer for hex capture replay and the replay shortcut;
 │                                        macOS keeps its screen-recording dot lit the whole time it is on
@@ -1617,6 +1618,13 @@ Annotate on (`capture.enabled`): a recording is an Annotate capture
 dictation timeline. Its shortcut (`screenshots.record_hotkey`) is unbound
 until the drawer's Record screen row sets one (a key is required; the
 trash button clears it); without Annotate the row says "Needs Annotate".
+While the Lab is on, a saved record shortcut keeps its key even with
+Annotate off and never shares one with another shortcut: Annotate's check
+counts it, so giving Annotate its chord and then turning Annotate on is
+refused, and the Lab itself won't turn on while either of its shortcuts is
+already in use (its row stays off and says so). A collision can't leave the
+record shortcut dead and let Annotate's whole-screen recording take the
+chord.
 
 ```ts
 record shortcut  -> the same picker, "Full screen · Click to record"; area, window (Space), or display
@@ -1667,6 +1675,14 @@ an Annotate capture's movie  -> 1280 px long edge (2560 for a display), system H
 
 Checks: `the_record_shortcut_records_and_never_while_the_picker_shows` in
 [screenshots.rs](../../src/screenshots.rs),
+`a_granted_screenshots_permission_reopens_its_picker` in
+[capture_capsule/flow.rs](../../src/rune_ui/capture_capsule/flow.rs),
+`the_record_shortcut_holds_its_key_while_the_screenshot_lab_is_on` in
+[app_settings.rs](../../src/app_settings.rs),
+`annotate_will_not_take_a_saved_record_shortcut` in
+[rune_ui/scrawl.rs](../../src/rune_ui/scrawl.rs),
+`the_screenshot_lab_and_annotate_never_share_a_shortcut` in
+[control/settings.rs](../../src/control/settings.rs),
 `a_recording_saves_beside_the_shots_and_never_over_one` in
 [screenshots/recording.rs](../../src/screenshots/recording.rs),
 `a_stopped_screenshot_recording_folds_the_capsule` in
@@ -1683,8 +1699,11 @@ from [suppression.rs](../../src/suppression.rs) before the listener's
 own handling), never by the listener, and its press and release stay with
 it. With the lab off the tap returns at once and nothing is made: no
 picker window, no thumbnail, no work. Screen Recording is Annotate's: a
-press without it shows Annotate's permission helper instead of the
-picker.
+press without it shows the same permission helper instead of the picker,
+and the helper's Ready button (or Restart, then Ready) reopens the
+Screenshots picker in the mode the shortcut asked for — a shot, or a
+recording — never Annotate's whole-screen recording. Annotate's own
+helper still records once it's ready.
 
 The picker is a non-key overlay, so Hex is usually not the frontmost app
 while it shows, and macOS ignores a background app's cursor. Hex builds

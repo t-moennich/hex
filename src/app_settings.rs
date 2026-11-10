@@ -1206,7 +1206,9 @@ impl AppSettings {
     /// Whether `binding` overlaps a shortcut `slot` must not share: the other
     /// active shortcuts and, where meetings exist (macOS), meeting paste. The
     /// two capture shortcuts never share a key, on or off, since turning
-    /// captures on can't pull them apart.
+    /// captures on can't pull them apart; Labs › Screenshots' record
+    /// shortcut holds its key while its Lab is on, even with Annotate off,
+    /// so Annotate can't take it when it's turned on.
     pub fn hotkey_in_use(&self, slot: HotkeySlot, binding: &HotkeyBinding) -> bool {
         let mut others = Vec::new();
         if slot != HotkeySlot::Dictation {
@@ -1266,7 +1268,8 @@ impl AppSettings {
             others.push(self.screenshots.hotkey.clone());
         }
         if slot != HotkeySlot::ScreenshotRecord
-            && self.screenshot_recording_available()
+            && cfg!(target_os = "macos")
+            && self.labs.screenshots
             && let Some(record) = &self.screenshots.record_hotkey
         {
             others.push(record.clone());
@@ -1723,6 +1726,64 @@ mod tests {
         assert!(settings.hotkey_in_use(HotkeySlot::SecondDictation, &dictation));
         settings.second_dictation_hotkey = Some(dictation);
         assert_eq!(settings.runtime_hotkeys().second_dictation, None);
+    }
+
+    /// A record shortcut saved while Annotate is off keeps its key once the
+    /// Screenshots Lab is on, so Annotate can never be given the same chord
+    /// and take it: the record shortcut would otherwise go dead, and
+    /// Annotate would record the whole screen.
+    #[test]
+    fn the_record_shortcut_holds_its_key_while_the_screenshot_lab_is_on() {
+        let record = HotkeyBinding {
+            modifiers: HotkeyModifiers {
+                command: Some(ModifierSide::Either),
+                shift: Some(ModifierSide::Either),
+                ..HotkeyModifiers::default()
+            },
+            key: Some(HotkeyKey::named("r")),
+        };
+        let mut settings = AppSettings {
+            capture: CaptureSettings {
+                enabled: false,
+                ..CaptureSettings::default()
+            },
+            ..AppSettings::default()
+        };
+        settings.labs.screenshots = true;
+        settings.screenshots.record_hotkey = Some(record.clone());
+        if cfg!(target_os = "macos") {
+            assert!(
+                settings.hotkey_in_use(HotkeySlot::Capture, &record),
+                "Annotate's check counts the record shortcut before Annotate is on"
+            );
+            assert!(
+                settings.hotkey_in_use(HotkeySlot::Screenshot, &record),
+                "the screenshot shortcut's check counts it too"
+            );
+            assert!(
+                !settings.screenshots_shortcuts_in_use(),
+                "nothing else uses the Lab's own shortcuts"
+            );
+            assert_eq!(
+                settings.active_screenshot_record_hotkey(),
+                None,
+                "a recording still needs Annotate"
+            );
+
+            // Turning the Lab off frees its keys again.
+            settings.labs.screenshots = false;
+            assert!(!settings.hotkey_in_use(HotkeySlot::Capture, &record));
+            // Its own two shortcuts on one key, or one another shortcut
+            // uses, keeps the Lab off.
+            settings.screenshots.hotkey = record.clone();
+            assert!(settings.screenshots_shortcuts_in_use());
+            settings.screenshots.hotkey = HotkeyBinding::screenshot_default();
+            settings.dictation_hotkey = HotkeyBinding::screenshot_default();
+            assert!(settings.screenshots_shortcuts_in_use());
+        } else {
+            assert!(!settings.hotkey_in_use(HotkeySlot::Capture, &record));
+            assert!(!settings.screenshots_shortcuts_in_use());
+        }
     }
 
     /// Labs › Transform typed text: its binding takes effect only on Linux
