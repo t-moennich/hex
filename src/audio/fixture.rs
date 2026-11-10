@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use color_eyre::eyre::{Result, WrapErr, eyre};
 
-use super::{AudioInput, CaptureInstant, STREAM_STALL_TIMEOUT, Selection};
+use super::{AudioInput, CaptureInstant, FIRST_CHUNK_TIMEOUT, STREAM_STALL_TIMEOUT, Selection};
 
 /// What the fixture input is called in the log and Settings.
 pub(super) const NAME: &str = "Audio fixture";
@@ -120,7 +120,9 @@ pub(super) fn open(path: &Path) -> Result<AudioInput> {
         restart_generation: super::audio_service_restart_generation(),
         hex_microphone: crate::audio::hex_microphone::capture_feed(sample_rate).1,
         stall_after: Some(STREAM_STALL_TIMEOUT),
+        first_chunk_after: FIRST_CHUNK_TIMEOUT,
         last_delivery: Mutex::new(Instant::now()),
+        delivered: std::sync::atomic::AtomicBool::new(false),
     })
 }
 

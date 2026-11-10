@@ -229,14 +229,23 @@ pub struct AudioInput {
     /// How long the stream may go without delivering audio before it counts
     /// as failed; `None` for test inputs fed by hand.
     stall_after: Option<Duration>,
+    /// How long a new stream may take to deliver its first chunk.
+    first_chunk_after: Duration,
     /// When the stream opened or last delivered a chunk.
     last_delivery: Mutex<Instant>,
+    /// Whether the stream has delivered a chunk yet.
+    delivered: AtomicBool,
 }
 
 /// A running stream delivers audio every few milliseconds, even silence. One
 /// that has delivered nothing for this long has stopped without reporting an
 /// error (seen after a burst of overruns, #1206) and is reopened.
 pub(crate) const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(4);
+
+/// A new stream may deliver nothing for longer: a Bluetooth headset that
+/// switches to its headset profile when the microphone opens can take more
+/// than `STREAM_STALL_TIMEOUT` before PipeWire sends the first chunk.
+pub(crate) const FIRST_CHUNK_TIMEOUT: Duration = Duration::from_secs(12);
 
 pub enum AudioInputEvent {
     Chunk {
@@ -462,15 +471,18 @@ impl AudioInput {
                 restart_generation: audio_service_restart_generation(),
                 hex_microphone: crate::audio::hex_microphone::capture_feed(48_000).1,
                 stall_after: None,
+                first_chunk_after: FIRST_CHUNK_TIMEOUT,
                 last_delivery: Mutex::new(Instant::now()),
+                delivered: AtomicBool::new(false),
             },
             sender,
         )
     }
 
     #[cfg(test)]
-    fn watch_stalls_for_test(&mut self, after: Duration) {
+    fn watch_stalls_for_test(&mut self, after: Duration, first_chunk_after: Duration) {
         self.stall_after = Some(after);
+        self.first_chunk_after = first_chunk_after;
         *self
             .last_delivery
             .lock()
@@ -538,7 +550,9 @@ impl AudioInput {
             restart_generation,
             hex_microphone: started.hex_microphone,
             stall_after: Some(STREAM_STALL_TIMEOUT),
+            first_chunk_after: FIRST_CHUNK_TIMEOUT,
             last_delivery: Mutex::new(Instant::now()),
+            delivered: AtomicBool::new(false),
         })
     }
 
@@ -576,6 +590,7 @@ impl AudioInput {
                         .last_delivery
                         .lock()
                         .unwrap_or_else(|error| error.into_inner()) = Instant::now();
+                    self.delivered.store(true, Ordering::Relaxed);
                 }
                 AudioInputEvent::Chunk {
                     samples,
@@ -584,6 +599,11 @@ impl AudioInput {
             }
             Err(RecvTimeoutError::Timeout) => {
                 let stalled = self.stall_after.is_some_and(|after| {
+                    let after = if self.delivered.load(Ordering::Relaxed) {
+                        after
+                    } else {
+                        after.max(self.first_chunk_after)
+                    };
                     self.last_delivery
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())
@@ -2624,7 +2644,7 @@ mod tests {
         let stall = Duration::from_millis(400);
         let mut input = RecoveringAudioInput::closed(None, 1, Some("Test microphone"));
         let (mut opened, samples) = AudioInput::channel_for_test();
-        opened.watch_stalls_for_test(stall);
+        opened.watch_stalls_for_test(stall, stall);
         input.finish_initial_open(Ok(opened), Instant::now());
 
         // Delivering audio keeps the stream alive.
@@ -2648,6 +2668,29 @@ mod tests {
             RecoveringAudioInputEvent::Interrupted
         ));
         assert!(input.is_recovering());
+    }
+
+    #[test]
+    fn a_new_stream_gets_longer_for_its_first_chunk() {
+        let stall = Duration::from_millis(200);
+        let first_chunk = Duration::from_millis(600);
+        let mut input = RecoveringAudioInput::closed(None, 1, Some("Test microphone"));
+        let (mut opened, _samples) = AudioInput::channel_for_test();
+        opened.watch_stalls_for_test(stall, first_chunk);
+        input.finish_initial_open(Ok(opened), Instant::now());
+
+        // Past the stall timeout but before the first chunk timeout.
+        std::thread::sleep(stall * 2);
+        assert!(matches!(
+            input.recv_timeout(Duration::ZERO, true),
+            RecoveringAudioInputEvent::Timeout
+        ));
+
+        std::thread::sleep(first_chunk);
+        assert!(matches!(
+            input.recv_timeout(Duration::ZERO, true),
+            RecoveringAudioInputEvent::Interrupted
+        ));
     }
 
     /// What the opener saw of the previous stream's feed switch when it ran.
